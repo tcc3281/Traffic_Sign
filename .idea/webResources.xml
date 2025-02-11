@@ -5,9 +5,14 @@
       <entry url="file://$PROJECT_DIR$">
         <entryData>
           <resourceRoots>
-            <path value="file://$PROJECT_DIR$/after" />
+            <path value="file://$PROJECT_DIR$/after_padding" />
             <path value="file://$PROJECT_DIR$/data" />
             <path value="file://$PROJECT_DIR$/after_resize" />
+            <path value="file://$PROJECT_DIR$/after_sharpening" />
+            <path value="file://$PROJECT_DIR$/after_blur" />
+            <path value="file://$PROJECT_DIR$/after_filter" />
+            <path value="file://$PROJECT_DIR$/dataset" />
+            <path value="file://$PROJECT_DIR$/after_fblur" />
           </resourceRoots>
         </entryData>
       </entry>
