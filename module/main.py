@@ -21,7 +21,7 @@ def load_and_predict(model_path, img_path, target_size=(224, 224)):
 
 if __name__ == '__main__':
     # Example usage
-    model_path = 'model/image_classifier_v8.h5'
+    model_path = '../model/image_classifier_v8.h5'
     img_path = 'cam_vuot.jpeg'
     predictions = load_and_predict(model_path, img_path)
     res= np.argmax(predictions)
