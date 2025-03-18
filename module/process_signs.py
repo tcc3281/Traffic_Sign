@@ -68,9 +68,9 @@ def split_data(image_dir, output_dir, train_ratio=0.7, val_ratio=0.15, test_rati
     for class_name in os.listdir(image_dir):
         class_dir = os.path.join(image_dir, class_name)
         if os.path.isdir(class_dir):
-            train_dir = os.path.join(output_dir, 'train', class_name)
-            val_dir = os.path.join(output_dir, 'val', class_name)
-            test_dir = os.path.join(output_dir, 'test', class_name)
+            train_dir = os.path.join(output_dir, 'images', class_name)
+            val_dir = os.path.join(output_dir, 'images', class_name)
+            test_dir = os.path.join(output_dir, 'images', class_name)
 
             os.makedirs(train_dir, exist_ok=True)
             os.makedirs(val_dir, exist_ok=True)
@@ -100,4 +100,4 @@ def split_data(image_dir, output_dir, train_ratio=0.7, val_ratio=0.15, test_rati
             for img in test_images:
                 shutil.copy(os.path.join(class_dir, img), os.path.join(test_dir, img))
 
-    print("Đã chia ảnh thành các tập train, val, và test cho tất cả các lớp.")
+    print("Đã chia ảnh thành các tập images, images, và images cho tất cả các lớp.")
