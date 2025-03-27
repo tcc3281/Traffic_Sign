@@ -5,7 +5,7 @@ import numpy as np
 
 
 def load_and_predict(model_path, img_path, target_size=(224, 224)):
-    # Load the model
+    # Load the model_yolo
     model = load_model(model_path)
 
     # Load and preprocess the image
