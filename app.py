@@ -122,8 +122,11 @@ async def predict(file: UploadFile = File(...)):
         contents = await file.read()
         image = cv2.imdecode(np.frombuffer(contents, np.uint8), cv2.IMREAD_COLOR)
 
-        # Xử lý với model_yolo
-        results = model_yolo.predict(image)
+        # Thay đổi 1: Resize ảnh trước khi xử lý
+        image = cv2.resize(image, (320, 320))  # Thay đổi kích thước
+
+        # Thay đổi 2: Sử dụng tham số khác cho model
+        results = model_yolo.predict(image, augment=True)
 
         # Tính toán thời gian
         total_time = (time.time() - start_time) * 1000  # Convert to milliseconds
