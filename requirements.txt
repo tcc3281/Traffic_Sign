@@ -1,0 +1,25 @@
+# Core dependencies
+torch==2.6.0
+torchvision==0.21.0
+ultralytics==8.3.95
+numpy==1.26.4
+opencv-python==4.11.0.86
+albumentations==2.0.5
+matplotlib==3.10.1
+seaborn==0.13.2
+pandas==2.2.3
+tqdm==4.67.1
+scikit-learn==1.6.1
+
+# FastAPI and related dependencies
+fastapi==0.115.12
+uvicorn==0.34.0
+python-multipart==0.0.20
+starlette==0.46.1
+
+# Image processing
+Pillow==11.1.0
+
+# Optional dependencies for visualization and debugging
+jupyterlab==4.3.5
+ipython==9.0.2
