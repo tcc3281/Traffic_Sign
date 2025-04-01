@@ -85,14 +85,20 @@ The system is designed to work with Vietnamese traffic signs and can be extended
    ├── dataset/
    │   ├── classification/
    │   │   ├── train/
-   │   │   ├── val/
+   │   │   ├── valid/
    │   │   ├── test/
    │   │   └── class_mapping.txt
    │   ├── detection/
    │   │   ├── train/
-   │   │   ├── val/
+   │   │   │   ├── images/
+   │   │   │   ├── labels/
+   │   │   ├── valid/
+   │   │   │   ├── images/
+   │   │   │   ├── labels/
    │   │   ├── test/
-   │   │   └── annotations/
+   │   │   │   ├── images/
+   │   │   │   ├── labels/
+   │   │   └── class_mapping.txt
    ```
 
 ---
@@ -115,13 +121,13 @@ The system is designed to work with Vietnamese traffic signs and can be extended
    The API will be available at `http://localhost:8000`.
 
 ### 3. **Frontend**
-   Open `frontend/index.html` in a browser to interact with the detection and classification system.
+   Open `web/index.html` in a browser to interact with the detection and classification system.
 
 ---
 
 ## API Endpoints
 
-### 1. **/detect**
+### 1. **Detect**
    - **Method**: POST
    - **Description**: Detects traffic signs in an uploaded image.
    - **Input**: Image file (e.g., `.jpg`, `.png`)
@@ -145,7 +151,7 @@ The system is designed to work with Vietnamese traffic signs and can be extended
      }
      ```
 
-### 2. **/classify**
+### 2. **Classify**
    - **Method**: POST
    - **Description**: Classifies a traffic sign in an uploaded image.
    - **Input**: Image file (e.g., `.jpg`, `.png`)
@@ -189,8 +195,8 @@ The system is designed to work with Vietnamese traffic signs and can be extended
 
 ## Contributors
 
-- **Your Name**: Project Lead
-- **Other Contributors**: Add names here
+- **Your Name**: Chiến Trần
+- **Other Contributors**: 
 
 ---
 
