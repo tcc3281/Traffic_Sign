@@ -1,4 +1,3 @@
-# === Imports ===
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -31,34 +30,17 @@ def load_class_mapping(txt_path):
             idx_to_class[int(idx)] = class_name.strip()
     return idx_to_class
 
-def process_image(contents: bytes) -> np.ndarray:
-    """Process image for YOLO model."""
-    image = cv2.imdecode(np.frombuffer(contents, np.uint8), cv2.IMREAD_COLOR)
-    if image is None:
-        raise ValueError("Cannot read image from input data")
-    image = cv2.resize(image, (640, 640), interpolation=cv2.INTER_LINEAR)
-    return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+class_names_resnet = load_class_mapping(class_mapping_path)
 
-def process_image_for_resnet(contents: bytes) -> torch.Tensor:
-    """Process image for ResNet model."""
-    image = cv2.imdecode(np.frombuffer(contents, np.uint8), cv2.IMREAD_COLOR)
-    if image is None:
-        raise ValueError("Cannot read image")
-    image = cv2.resize(image, (224, 224), interpolation=cv2.INTER_LINEAR)
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    image = image.astype(np.float32) / 255.0
-    mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
-    std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
-    image = (image - mean) / std
-    return torch.from_numpy(image).permute(2, 0, 1).unsqueeze(0).float()
 
-# === Model Loading Functions ===
 async def load_yolo_model():
-    """Load YOLO model."""
+    """Tải model YOLO"""
     global model_yolo
     model_yolo = YOLO(yolo_model_path)
+    # Warm up model
     dummy_input = np.zeros((640, 640, 3), dtype=np.uint8)
     _ = model_yolo.predict(dummy_input, verbose=False)
+
 
 def load_resnet_model():
     """Load ResNet model."""
@@ -85,14 +67,35 @@ def load_resnet_model():
     model.eval()
     return model
 
-# === FastAPI Application Setup ===
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Quản lý vòng đời ứng dụng"""
+    global model_yolo, model_resnet
+    model_yolo = YOLO(yolo_model_path)
+    model_resnet = load_resnet_model()
+
+    # Warm up models
+    dummy_image = np.zeros((224, 224, 3), dtype=np.uint8)
+    _ = model_yolo.predict(dummy_image, verbose=False)
+
+    dummy_tensor = torch.randn(1, 3, 224, 224)
+    _ = model_resnet(dummy_tensor)
+
+    yield
+
+    # Clean up (nếu cần)
+
+
 app = FastAPI(
-    title="Traffic Sign Detection and Classification API",
-    version="1.0",
+    lifespan=lifespan,
     docs_url=None,
-    redoc_url=None
+    redoc_url=None,
+    title="Traffic Sign Detection API",
+    version="1.0"
 )
 
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -100,65 +103,172 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Manage application lifecycle."""
-    global model_yolo, model_resnet, class_names_resnet
-    model_yolo = YOLO(yolo_model_path)
-    model_resnet = load_resnet_model()
-    class_names_resnet = load_class_mapping(class_mapping_path)
-    dummy_image = np.zeros((224, 224, 3), dtype=np.uint8)
-    _ = model_yolo.predict(dummy_image, verbose=False)
-    dummy_tensor = torch.randn(1, 3, 224, 224)
-    _ = model_resnet(dummy_tensor)
-    yield
 
-app.router.lifespan_context = lifespan
+def process_image(contents: bytes) -> np.ndarray:
+    """Xử lý ảnh đầu vào tối ưu"""
+    image = cv2.imdecode(np.frombuffer(contents, np.uint8), cv2.IMREAD_COLOR)
+    if image is None:
+        raise ValueError("Không thể đọc ảnh từ dữ liệu đầu vào")
 
-# === API Endpoints ===
+    # Resize và chuẩn hóa ảnh
+    image = cv2.resize(image, (640, 640), interpolation=cv2.INTER_LINEAR)
+    return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+
 @app.post("/detect")
-async def detect_objects(file: UploadFile = File(...)):
-    """Detect objects in an image using YOLO."""
+async def predict(file: UploadFile = File(...)):
+    start_time = time.time()
     try:
         contents = await file.read()
-        image = process_image(contents)
-        results = model_yolo.predict(image, augment=True)
-        predictions = [
-            {
+        image = cv2.imdecode(np.frombuffer(contents, np.uint8), cv2.IMREAD_COLOR)
+
+        # Xử lý với model_yolo
+        results = model_yolo.predict(image)
+
+        # Tính toán thời gian
+        total_time = (time.time() - start_time) * 1000  # Convert to milliseconds
+
+        return {
+            "predictions": [{
                 "class": model_yolo.names[int(box.cls)],
                 "confidence": float(box.conf),
                 "bbox": box.xyxy[0].tolist()
-            }
-            for box in results[0].boxes
-        ]
-        return {
-            "predictions": predictions,
+            } for box in results[0].boxes],
             "image_size": results[0].orig_shape,
             "detected_objects": len(results[0].boxes),
-            "speed": results[0].speed
+            "speed": {
+                "preprocess": results[0].speed["preprocess"],
+                "inference": results[0].speed["inference"],
+                "postprocess": results[0].speed["postprocess"]
+            },
+            "total_time": total_time
         }
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Detection error: {str(e)}")
+        raise HTTPException(500, detail=str(e))
+
+
+def process_image_for_resnet(contents: bytes) -> torch.Tensor:
+    image = cv2.imdecode(np.frombuffer(contents, np.uint8), cv2.IMREAD_COLOR)
+    if image is None:
+        raise ValueError("Could not read image")
+
+    # Resize và chuẩn hóa
+    image = cv2.resize(image, (224, 224), interpolation=cv2.INTER_LINEAR)
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    image = image.astype(np.float32) / 255.0  # Quan trọng: float32
+
+    # Chuẩn hóa theo ImageNet
+    mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+    std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+    image = (image - mean) / std
+
+    # Chuyển đổi sang tensor và thêm batch dimension
+    image = torch.from_numpy(image).permute(2, 0, 1).unsqueeze(0)
+    return image.float()  # Đảm bảo kiểu float32
+
 
 @app.post("/classify")
-async def classify_image(file: UploadFile = File(...)):
-    """Classify an image using ResNet."""
+async def classify(file: UploadFile = File(...)):
+    start_time = time.time()
     try:
         contents = await file.read()
+
+        # Preprocess
+        preprocess_start = time.time()
         tensor = process_image_for_resnet(contents)
+
+        # Inference
+        inference_start = time.time()
         with torch.no_grad():
             outputs = model_resnet(tensor)
-            probs = torch.nn.functional.softmax(outputs, dim=1)
-            top_prob, top_class = torch.max(probs, dim=1)
+
+        # Postprocess
+        postprocess_start = time.time()
+        probs = torch.nn.functional.softmax(outputs, dim=1)
+        top_prob, top_class = torch.max(probs, dim=1)
+        class_name = class_names_resnet[top_class.item()]
+
+        # Tính thời gian
+        preprocess_time = (time.time() - preprocess_start) * 1000
+        inference_time = (time.time() - inference_start) * 1000
+        postprocess_time = (time.time() - postprocess_start) * 1000
+        total_time = (time.time() - start_time) * 1000
+
         return {
             "classification": {
-                "class": class_names_resnet[top_class.item()],
+                "class": class_name,
                 "confidence": top_prob.item()
+            },
+            "speed": {
+                "preprocess": preprocess_time,
+                "inference": inference_time,
+                "postprocess": postprocess_time
+            },
+            "total_time": total_time
+        }
+
+    except Exception as e:
+        print(e)
+        raise HTTPException(500, detail=f"Classification error: {str(e)}")
+
+
+@app.post("/detect_and_classify")
+async def detect_and_classify(file: UploadFile = File(...)):
+    start_time = time.time()
+    try:
+        contents = await file.read()
+        image = cv2.imdecode(np.frombuffer(contents, np.uint8), cv2.IMREAD_COLOR)
+
+        # Detection
+        detect_start = time.time()
+        detect_results = model_yolo.predict(image)
+        detect_time = (time.time() - detect_start) * 1000
+
+        # Classification for each detected object
+        classify_results = []
+        for box in detect_results[0].boxes:
+            x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+            cropped_image = image[y1:y2, x1:x2]
+            cropped_tensor = process_image_for_resnet(cv2.imencode('.jpg', cropped_image)[1].tobytes())
+
+            with torch.no_grad():
+                outputs = model_resnet(cropped_tensor)
+                probs = torch.nn.functional.softmax(outputs, dim=1)
+                top_prob, top_class = torch.max(probs, dim=1)
+                classify_results.append({
+                    "detection": {
+                        "class": model_yolo.names[int(box.cls)],
+                        "confidence": float(box.conf),
+                        "bbox": [x1, y1, x2, y2]
+                    },
+                    "classification": {
+                        "class": class_names_resnet[top_class.item()],
+                        "confidence": top_prob.item()
+                    }
+                })
+
+        total_time = (time.time() - start_time) * 1000
+
+        return {
+            "results": classify_results,
+            "image_size": detect_results[0].orig_shape,
+            "detected_objects": len(detect_results[0].boxes),
+            "speed": {
+                "detection": detect_time,
+                "total": total_time
             }
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Classification error: {str(e)}")
 
-# === Main Entry Point ===
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    except Exception as e:
+        raise HTTPException(500, detail=f"Detection and classification error: {str(e)}")
+
+
+if __name__ == '__main__':
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=8000
+    )
+# python -m http.server 3000 --bind 0.0.0.0
+# http://localhost:3000/
