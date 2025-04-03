@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YOLO Object Detection</title>
+    <style>
+        :root {
+            --primary-color: #007bff;
+            --secondary-color: #6c757d;
+            --success-color: #28a745;
+            --danger-color: #dc3545;
+            --light-color: #f8f9fa;
+            --dark-color: #343a40;
+        }
+
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            margin: 15px;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 25px;
+            text-align: center;
+            font-size: clamp(1.5rem, 4vw, 2.5rem);
+        }
+
+        .container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .canvasContainer {
+            flex: 1 1 500px;
+            min-width: 300px;
+            position: relative;
+            background: #f8f9fa;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        canvas {
+            width: 100%;
+            height: auto;
+            display: block;
+            border-radius: 8px;
+        }
+
+        .infoPanel {
+            flex: 1 1 400px;
+            padding: 15px;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .upload-section {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 20px;
+            justify-content: center;
+        }
+
+        .file-input {
+            padding: 8px 12px;
+            border: 2px solid var(--primary-color);
+            border-radius: 6px;
+            background: var(--light-color);
+            cursor: pointer;
+            transition: all 0.2s;
+            flex: 1 1 200px;
+        }
+
+        .predict-button {
+            padding: 8px 20px;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background-color 0.2s;
+            flex: 1 1 150px;
+        }
+
+        .metrics-container {
+            background: var(--light-color);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 15px;
+        }
+
+        .metric-row {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            margin-bottom: 6px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .prediction-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 12px;
+            font-size: 0.9em;
+        }
+
+        .prediction-table th,
+        .prediction-table td {
+            padding: 8px 10px;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                margin: 10px;
+            }
+
+            .container {
+                gap: 15px;
+            }
+
+            .canvasContainer,
+            .infoPanel {
+                flex-basis: 100%;
+            }
+
+            .file-input,
+            .predict-button {
+                flex-basis: 100%;
+                text-align: center;
+            }
+
+            .prediction-table {
+                display: block;
+                overflow-x: auto;
+                white-space: nowrap;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .metric-row {
+                flex-direction: column;
+                gap: 4px;
+            }
+
+            .metric-label {
+                font-size: 0.9em;
+            }
+
+            .metric-value {
+                font-size: 0.85em;
+            }
+
+            .prediction-table th,
+            .prediction-table td {
+                padding: 6px 8px;
+                font-size: 0.85em;
+            }
+        }
+
+        /* Thêm style cho radio group */
+        .mode-selector {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 15px;
+            justify-content: center;
+        }
+
+        .mode-option {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            cursor: pointer;
+            padding: 8px 12px;
+            border-radius: 6px;
+            border: 2px solid #ddd;
+            transition: all 0.2s;
+        }
+
+        .mode-option.active {
+            border-color: var(--primary-color);
+            background-color: #e3f2fd;
+        }
+
+        input[type="radio"] {
+            display: none;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: var(--secondary-color);
+        }
+
+        .loading:after {
+            content: ' .';
+            animation: dots 1s steps(5, end) infinite;
+        }
+
+        @keyframes dots {
+            0%, 20% {
+                content: ' .';
+            }
+            40% {
+                content: ' ..';
+            }
+            60% {
+                content: ' ...';
+            }
+            80%, 100% {
+                content: ' ';
+            }
+        }
+    </style>
+</head>
+<body>
+<h1>Object Detection with YOLOv8 and Classification with ResNet50</h1>
+<div class="upload-section">
+    <div class="mode-selector">
+        <label class="mode-option" id="detectOption">
+            <input type="radio" name="mode" value="detect" checked>
+            🎯 Object Detection
+        </label>
+        <label class="mode-option" id="classifyOption">
+            <input type="radio" name="mode" value="classify">
+            🏷 Image Classification
+        </label>
+        <label class="mode-option" id="detectAndClassifyOption">
+            <input type="radio" name="mode" value="detect_and_classify">
+            🔍 Detect & Classify
+        </label>
+    </div>
+    <input type="file" id="imageInput" accept="image/*" class="file-input">
+    <button onclick="processImage()" class="predict-button" id="processButton">Detect Objects</button>
+</div>
+
+<div class="container">
+    <div class="canvasContainer">
+        <canvas id="imageCanvas"></canvas>
+    </div>
+    <div class="infoPanel" id="infoPanel">
+        <div class="loading">Upload an image to detect objects</div>
+    </div>
+</div>
+
+<script>
+    // Thêm biến lưu chế độ
+    let currentMode = 'detect';
+
+    // Thêm event listener cho radio buttons
+    document.querySelectorAll('input[name="mode"]').forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            currentMode = e.target.value;
+            document.getElementById('processButton').textContent =
+                currentMode === 'detect' ? 'Detect Objects' :
+                currentMode === 'classify' ? 'Classify Image' : 'Detect and Classify';
+
+            // Cập nhật trạng thái active cho các option
+            document.querySelectorAll('.mode-option').forEach(option => {
+                option.classList.remove('active');
+            });
+            e.target.parentElement.classList.add('active');
+        });
+    });
+    // DOM Elements
+    const canvas = document.getElementById("imageCanvas");
+    const ctx = canvas.getContext("2d");
+    const infoPanel = document.getElementById("infoPanel");
+    const fileInput = document.getElementById("imageInput");
+
+    // Global variables
+    let imageObj = null;
+    let processingStartTime = 0;
+    let detectionOrder = 1; // Counter for detection order
+
+    /**
+     * Draws image and bounding boxes on canvas with order numbers
+     * @param {string} imageUrl - URL of the image to draw
+     * @param {Array} predictions - Array of prediction objects
+     */
+    function drawImageAndBoxes(imageUrl, predictions) {
+        // Reset order counter
+        detectionOrder = 1;
+
+        imageObj = new Image();
+        imageObj.onload = () => {
+            // Calculate scaling to fit container while maintaining aspect ratio
+            const container = canvas.parentElement;
+            const containerWidth = container.clientWidth;
+            const scale = Math.min(containerWidth / imageObj.naturalWidth, 1);
+
+            // Set canvas dimensions
+            canvas.width = imageObj.naturalWidth * scale;
+            canvas.height = imageObj.naturalHeight * scale;
+
+            // Draw the image
+            ctx.drawImage(imageObj, 0, 0, canvas.width, canvas.height);
+
+            // Draw each prediction with order number
+            predictions.forEach(pred => {
+                const [x1, y1, x2, y2] = pred.bbox.map(coord => coord * scale);
+                const width = x2 - x1;
+                const height = y2 - y1;
+
+                // Draw bounding box
+                ctx.strokeStyle = "#ff4757";
+                ctx.lineWidth = 2;
+                ctx.strokeRect(x1, y1, width, height);
+
+                // Draw order number background
+                ctx.fillStyle = "#ff4757";
+                const text = `${detectionOrder}`;
+                const textWidth = ctx.measureText(text).width;
+
+                ctx.fillRect(
+                    x1 - 1,
+                    y1 - 20,
+                    textWidth + 10,
+                    20
+                );
+
+                // Draw order number
+                ctx.fillStyle = "#ffffff";
+                ctx.font = "bold 12px Arial";
+                ctx.fillText(text, x1 + 5, y1 - 5);
+
+                // Increment order number for next detection
+                detectionOrder++;
+            });
+        };
+        imageObj.src = imageUrl;
+    }
+
+    /**
+     * Creates FormData object for file upload
+     * @param {File} file - Image file to upload
+     * @returns {FormData}
+     */
+    function createFormData(file) {
+        const formData = new FormData();
+        formData.append("file", file);
+        return formData;
+    }
+
+    /**
+     * Displays detection results in the info panel with Order column
+     * @param {Object} data - Response data from the API
+     * @param {number} uploadSize - Original file size in KB
+     * @param {number} compressedSize - Compressed file size in KB
+     */
+    function renderResults(data, uploadSize, compressedSize) {
+        const totalAPITime = (data.speed?.preprocess || 0) + (data.speed?.inference || 0) + (data.speed?.postprocess || 0);
+        const totalProcessingTime = (performance.now() - processingStartTime).toFixed(1);
+
+        infoPanel.innerHTML = `
+            <div class="metrics-container">
+                <h3>Detection Metrics</h3>
+                <div class="metric-row">
+                    <span class="metric-label">Input Resolution:</span>
+                    <span class="metric-value">${data.image_size[0]}×${data.image_size[1]}</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Objects Detected:</span>
+                    <span class="metric-value">${data.detected_objects}</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Preprocess Time:</span>
+                    <span class="metric-value">${(data.speed?.preprocess || 0).toFixed(2)} ms</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Inference Time:</span>
+                    <span class="metric-value">${(data.speed?.inference || 0).toFixed(2)} ms</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Postprocess Time:</span>
+                    <span class="metric-value">${(data.speed?.postprocess || 0).toFixed(2)} ms</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Total API Time:</span>
+                    <span class="metric-value">${totalAPITime.toFixed(2)} ms</span>
+                </div>
+            </div>
+
+            <div class="performance-summary">
+                <div class="metric-row">
+                    <span class="metric-label">Original Size:</span>
+                    <span class="metric-value">${uploadSize.toFixed(2)} KB</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Compressed Size:</span>
+                    <span class="metric-value">${compressedSize.toFixed(2)} KB</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Total Processing Time:</span>
+                    <span class="metric-value">${totalProcessingTime} ms</span>
+                </div>
+            </div>
+
+            <h3>Detection Results</h3>
+            <table class="prediction-table">
+                <thead>
+                    <tr>
+                        <th>Order</th>
+                        <th>Class</th>
+                        <th>Confidence</th>
+                        <th>Bounding Box</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${data.predictions.map((pred, index) => `
+                        <tr>
+                            <td>${index + 1}</td>
+                            <td>${pred.class}</td>
+                            <td>${(pred.confidence * 100).toFixed(2)}%</td>
+                            <td>${pred.bbox.map(num => Math.round(num)).join(', ')}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+    }
+
+    /**
+     * Displays error message
+     * @param {Error} error - Error object
+     */
+    function showError(error) {
+        infoPanel.innerHTML = `
+            <div class="error">
+                <strong>Error:</strong> ${error.message}
+            </div>
+        `;
+    }
+
+    /**
+     * Compresses image file
+     * @param {File} file - Image file to compress
+     * @param {number} quality - JPEG quality (0-1)
+     * @param {number} maxWidth - Maximum width for resizing
+     * @returns {Promise<File>} Compressed image file
+     */
+    async function compressImage(file, quality = 0.7, maxWidth = 1024) {
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                const img = new Image();
+                img.onload = function () {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+
+                    // Calculate new dimensions
+                    const scale = Math.min(maxWidth / img.width, 1);
+                    const width = img.width * scale;
+                    const height = img.height * scale;
+
+                    // Set canvas dimensions
+                    canvas.width = width;
+                    canvas.height = height;
+
+                    // Draw and compress image
+                    ctx.drawImage(img, 0, 0, width, height);
+                    canvas.toBlob(blob => {
+                        resolve(new File([blob], file.name, {
+                            type: 'image/jpeg',
+                            lastModified: Date.now()
+                        }));
+                    }, 'image/jpeg', quality);
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    // Hàm hiển thị ảnh không có bounding box
+    function drawCleanImage(imageUrl) {
+        imageObj = new Image();
+        imageObj.onload = () => {
+            const container = canvas.parentElement;
+            const scale = Math.min(
+                container.clientWidth / imageObj.naturalWidth,
+                container.clientHeight / imageObj.naturalHeight
+            );
+
+            canvas.width = imageObj.naturalWidth * scale;
+            canvas.height = imageObj.naturalHeight * scale;
+            ctx.drawImage(imageObj, 0, 0, canvas.width, canvas.height);
+        };
+        imageObj.src = imageUrl;
+    }
+
+
+    /**
+     * Main function to process image and call API
+     */
+    async function processImage() {
+        try {
+            // Clear previous results
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            infoPanel.innerHTML = '<div class="loading">Processing image...</div>';
+
+            processingStartTime = performance.now();
+
+            const originalFile = fileInput.files[0];
+            if (!originalFile) {
+                throw new Error("No file selected. Please upload an image.");
+            }
+
+            const compressedFile = await compressImage(originalFile);
+            const endpoint = currentMode === 'detect' ? '/detect' : 
+                             currentMode === 'classify' ? '/classify' : '/detect_and_classify';
+
+            const response = await fetch(`http://localhost:8000${endpoint}`, {
+                method: "POST",
+                body: createFormData(compressedFile)
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.detail || `Server error: ${response.status}`);
+            }
+
+            const result = await response.json();
+            console.log("API Response:", result);
+
+            const imageUrl = URL.createObjectURL(compressedFile);
+
+            if (currentMode === 'detect') {
+                if (!result.predictions) {
+                    throw new Error("Detection response missing predictions");
+                }
+                drawImageAndBoxes(imageUrl, result.predictions);
+                renderResults(result, originalFile.size / 1024, compressedFile.size / 1024);
+            } else if (currentMode === 'classify') {
+                if (!result.classification || !result.classification.class || result.classification.confidence === undefined) {
+                    throw new Error(`Invalid classification format: ${JSON.stringify(result)}`);
+                }
+                drawCleanImage(imageUrl);
+                renderClassificationResults(result, originalFile, compressedFile);
+            } else if (currentMode === 'detect_and_classify') {
+                if (!result.results) {
+                    throw new Error("Detect and classify response missing results");
+                }
+                drawImageAndBoxesWithLabels(imageUrl, result.results);
+                renderDetectAndClassifyResults(result, originalFile.size / 1024, compressedFile.size / 1024);
+            }
+
+            // Reset file input to allow re-uploading the same file
+            fileInput.value = "";
+
+        } catch (error) {
+            console.error("Full error:", error);
+            showError(error);
+        }
+    }
+
+    /**
+     * Draws image with bounding boxes and classification labels
+     * @param {string} imageUrl - URL of the image to draw
+     * @param {Array} results - Array of detection and classification results
+     */
+    function drawImageAndBoxesWithLabels(imageUrl, results) {
+        imageObj = new Image();
+        imageObj.onload = () => {
+            const container = canvas.parentElement;
+            const scale = Math.min(container.clientWidth / imageObj.naturalWidth, 1);
+
+            canvas.width = imageObj.naturalWidth * scale;
+            canvas.height = imageObj.naturalHeight * scale;
+
+            ctx.drawImage(imageObj, 0, 0, canvas.width, canvas.height);
+
+            results.forEach((result, index) => {
+                const [x1, y1, x2, y2] = result.detection.bbox.map(coord => coord * scale);
+                const width = x2 - x1;
+                const height = y2 - y1;
+
+                // Draw bounding box
+                ctx.strokeStyle = "#ff4757";
+                ctx.lineWidth = 2;
+                ctx.strokeRect(x1, y1, width, height);
+
+                // Draw label background
+                ctx.fillStyle = "#ff4757";
+                const text = `${result.classification.class} (${(result.classification.confidence * 100).toFixed(1)}%)`;
+                const textWidth = ctx.measureText(text).width;
+
+                ctx.fillRect(
+                    x1 - 1,
+                    y1 - 20,
+                    textWidth + 10,
+                    20
+                );
+
+                // Draw label text
+                ctx.fillStyle = "#ffffff";
+                ctx.font = "bold 12px Arial";
+                ctx.fillText(text, x1 + 5, y1 - 5);
+            });
+        };
+        imageObj.src = imageUrl;
+    }
+
+    /**
+     * Renders detection and classification results in the info panel
+     * @param {Object} data - Response data from the API
+     * @param {number} uploadSize - Original file size in KB
+     * @param {number} compressedSize - Compressed file size in KB
+     */
+    function renderDetectAndClassifyResults(data, uploadSize, compressedSize) {
+        const totalProcessingTime = (performance.now() - processingStartTime).toFixed(1);
+
+        infoPanel.innerHTML = `
+            <div class="metrics-container">
+                <h3>Detection and Classification Metrics</h3>
+                <div class="metric-row">
+                    <span class="metric-label">Input Resolution:</span>
+                    <span class="metric-value">${data.image_size[0]}×${data.image_size[1]}</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Objects Detected:</span>
+                    <span class="metric-value">${data.detected_objects}</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Detection Time:</span>
+                    <span class="metric-value">${data.speed.detection.toFixed(2)} ms</span>
+                </div>
+            </div>
+
+            <div class="performance-summary">
+                <div class="metric-row">
+                    <span class="metric-label">Original Size:</span>
+                    <span class="metric-value">${uploadSize.toFixed(2)} KB</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Compressed Size:</span>
+                    <span class="metric-value">${compressedSize.toFixed(2)} KB</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Total Processing Time:</span>
+                    <span class="metric-value">${totalProcessingTime} ms</span>
+                </div>
+            </div>
+
+            <h3>Detection and Classification Results</h3>
+            <table class="prediction-table">
+                <thead>
+                    <tr>
+                        <th>Order</th>
+                        <th>Detected Class</th>
+                        <th>Detection Confidence</th>
+                        <th>Bounding Box</th>
+                        <th>Classification Class</th>
+                        <th>Classification Confidence</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${data.results.map((result, index) => `
+                        <tr>
+                            <td>${index + 1}</td>
+                            <td>${result.detection.class}</td>
+                            <td>${(result.detection.confidence * 100).toFixed(2)}%</td>
+                            <td>${result.detection.bbox.map(num => Math.round(num)).join(', ')}</td>
+                            <td>${result.classification.class}</td>
+                            <td>${(result.classification.confidence * 100).toFixed(2)}%</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+    }
+
+    // Sửa hàm renderClassificationResults để phù hợp với response mới
+    function renderClassificationResults(data, originalFile, compressedFile) {
+        const originalSizeKB = originalFile.size / 1024;
+        const compressedSizeKB = compressedFile.size / 1024;
+        const totalTime = (performance.now() - processingStartTime).toFixed(1);
+
+        infoPanel.innerHTML = `
+        <div class="metrics-container">
+            <h3>Classification Results</h3>
+            <div class="metric-row">
+                <span class="metric-label">Predicted Class:</span>
+                <span class="metric-value" style="color: var(--success-color); font-weight: bold">
+                    ${data.classification.class}
+                </span>
+            </div>
+            <div class="metric-row">
+                <span class="metric-label">Confidence:</span>
+                <span class="metric-value">${(data.classification.confidence * 100).toFixed(2)}%</span>
+            </div>
+        </div>
+
+        <div class="performance-summary">
+            <div class="metric-row">
+                <span class="metric-label">Original Size:</span>
+                <span class="metric-value">${originalSizeKB.toFixed(2)} KB</span>
+            </div>
+            <div class="metric-row">
+                <span class="metric-label">Compressed Size:</span>
+                <span class="metric-value">${compressedSizeKB.toFixed(2)} KB</span>
+            </div>
+            <div class="metric-row">
+                <span class="metric-label">Total Processing Time:</span>
+                <span class="metric-value">${totalTime} ms</span>
+            </div>
+        </div>
+
+        <h3>Processing Details</h3>
+        <div class="metric-row">
+            <span class="metric-label">Preprocess Time:</span>
+            <span class="metric-value">${(data.speed?.preprocess || 0).toFixed(2)} ms</span>
+        </div>
+        <div class="metric-row">
+            <span class="metric-label">Inference Time:</span>
+            <span class="metric-value">${(data.speed?.inference || 0).toFixed(2)} ms</span>
+        </div>
+        <div class="metric-row">
+            <span class="metric-label">Postprocess Time:</span>
+            <span class="metric-value">${(data.speed?.postprocess || 0).toFixed(2)} ms</span>
+        </div>
+    `;
+    }
+
+    // Khởi tạo active state mặc định
+    document.getElementById('detectOption').classList.add('active');
+</script>
+</body>
+</html>
