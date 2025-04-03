@@ -43,26 +43,27 @@ async def load_yolo_model():
 
 
 def load_resnet_model():
-    """Tải model ResNet với xử lý lỗi state_dict"""
-    model = models.resnet50()
-
-    # Thay đổi lớp cuối cùng
-    num_classes = 15  # Thay bằng số lớp thực tế
+    """Load ResNet model."""
+    model = models.resnet50(weights=None)
+    for name, param in model.named_parameters():
+        if "layer2" not in name and "layer3" not in name and "layer4" not in name and "fc" not in name:
+            param.requires_grad = False
+    checkpoint = torch.load(resnet_model_path, map_location='cpu')
+    state_dict = checkpoint['model_state_dict']
+    state_dict = {k.replace('module.', '').replace('backbone.', ''): v for k, v in state_dict.items()}
+    num_classes_checkpoint = next((state_dict[key].shape[0] for key in ['fc.weight', 'classifier.weight', 'head.fc.weight'] if key in state_dict), None)
+    if num_classes_checkpoint is None:
+        num_classes_checkpoint = len(checkpoint.get('classes_order', []))
     in_features = model.fc.in_features
-    model.fc = torch.nn.Linear(in_features, num_classes)
-
-    # Load state_dict
-    state_dict = torch.load(resnet_model_path, map_location='cpu')
-
-    # Xử lý các định dạng state_dict khác nhau
-    if 'state_dict' in state_dict:
-        state_dict = state_dict['state_dict']
-    elif 'model' in state_dict:
-        state_dict = state_dict['model']
-
-    # Load vào model
-    model.load_state_dict(state_dict, strict=False)  # strict=False để bỏ qua các layer không khớp
-    model = model.float()
+    model.fc = nn.Sequential(
+        nn.Dropout(0.6),
+        nn.Linear(in_features, 512),
+        nn.ReLU(),
+        nn.BatchNorm1d(512),
+        nn.Dropout(0.4),
+        nn.Linear(512, num_classes_checkpoint)
+    )
+    model.load_state_dict(state_dict, strict=False)
     model.eval()
     return model
 
