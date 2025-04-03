@@ -1,37 +1,36 @@
 from contextlib import asynccontextmanager
-
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from ultralytics import YOLO
 import cv2
 import numpy as np
 import uvicorn
-import asyncio
 import time
 import torch
 from torchvision import models
+import torch.nn as nn
 
-# Biến global cho model_yolo
+# === Global Variables and Configurations ===
+NUM_CLASSES = 51
 model_yolo = None
 model_resnet = None
-class_names_resnet = ['speed limit 20',
-                      'speed limit 30',
-                      'no truck passing',
-                      'no parking',
-                      'no horn',
-                      'no entry in this direction',
-                      'no cars',
-                      'speed limit 50',
-                      'speed limit 60',
-                      'speed limit 70',
-                      'speed limit 80',
-                      'no entry for all vehicles',
-                      'speed limit 100',
-                      'speed limit 120',
-                      'no passing']
+class_names_resnet = []
 
 yolo_model_path = "model/best.pt"
-resnet_model_path = "model/resnet50_model_v01.pth"
+resnet_model_path = "model/resnet50_best_model_v05.pth"
+class_mapping_path = "class_mapping.txt"
+
+# === Utility Functions ===
+def load_class_mapping(txt_path):
+    """Load class mapping from a file."""
+    idx_to_class = {}
+    with open(txt_path, 'r') as f:
+        for line in f:
+            idx, class_name = line.strip().split(':')
+            idx_to_class[int(idx)] = class_name.strip()
+    return idx_to_class
+
+class_names_resnet = load_class_mapping(class_mapping_path)
 
 
 async def load_yolo_model():
@@ -211,6 +210,57 @@ async def classify(file: UploadFile = File(...)):
     except Exception as e:
         print(e)
         raise HTTPException(500, detail=f"Classification error: {str(e)}")
+
+
+@app.post("/detect_and_classify")
+async def detect_and_classify(file: UploadFile = File(...)):
+    start_time = time.time()
+    try:
+        contents = await file.read()
+        image = cv2.imdecode(np.frombuffer(contents, np.uint8), cv2.IMREAD_COLOR)
+
+        # Detection
+        detect_start = time.time()
+        detect_results = model_yolo.predict(image)
+        detect_time = (time.time() - detect_start) * 1000
+
+        # Classification for each detected object
+        classify_results = []
+        for box in detect_results[0].boxes:
+            x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+            cropped_image = image[y1:y2, x1:x2]
+            cropped_tensor = process_image_for_resnet(cv2.imencode('.jpg', cropped_image)[1].tobytes())
+
+            with torch.no_grad():
+                outputs = model_resnet(cropped_tensor)
+                probs = torch.nn.functional.softmax(outputs, dim=1)
+                top_prob, top_class = torch.max(probs, dim=1)
+                classify_results.append({
+                    "detection": {
+                        "class": model_yolo.names[int(box.cls)],
+                        "confidence": float(box.conf),
+                        "bbox": [x1, y1, x2, y2]
+                    },
+                    "classification": {
+                        "class": class_names_resnet[top_class.item()],
+                        "confidence": top_prob.item()
+                    }
+                })
+
+        total_time = (time.time() - start_time) * 1000
+
+        return {
+            "results": classify_results,
+            "image_size": detect_results[0].orig_shape,
+            "detected_objects": len(detect_results[0].boxes),
+            "speed": {
+                "detection": detect_time,
+                "total": total_time
+            }
+        }
+
+    except Exception as e:
+        raise HTTPException(500, detail=f"Detection and classification error: {str(e)}")
 
 
 if __name__ == '__main__':
